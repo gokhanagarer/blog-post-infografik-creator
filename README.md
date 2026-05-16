@@ -25,6 +25,10 @@ cd blog-post-infografik-creator
 make demo
 ```
 
+📘 **Want a full step-by-step walkthrough?** Read [GETTING_STARTED.md](GETTING_STARTED.md) — covers Pollinations / Gemini setup, bringing your own brand (PNG + SVG logos), tuning post-processing, and troubleshooting.
+
+🧰 **Prefer no-code?** The same pipeline as an importable n8n workflow lives in [`n8n/`](n8n/) with a node-by-node walkthrough.
+
 You'll get three branded JPGs in `output/`:
 
 ```

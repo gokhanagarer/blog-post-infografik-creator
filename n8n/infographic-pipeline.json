@@ -1,0 +1,790 @@
+{
+  "name": "Infographic Creator — image gen + brand post-processing",
+  "nodes": [
+    {
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2200,
+        -800
+      ],
+      "parameters": {}
+    },
+    {
+      "name": "Read Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -2000,
+        -800
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Connect this credential in n8n"
+        }
+      },
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1wf_GRq6E7WePSj6eTxdhbnfHqCAzy1_HRAlUV12ab9k",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Filter Pending",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1800,
+        -800
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "pending",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Build Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1580,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Build Gemini prompt request — white-label professional, dominant #0860D2 + #FFAF3B accent\nconst blogTitle = $json['Blog Title'] || 'Untitled';\nconst content   = $json['Summary/Content'] || '';\nconst slug      = blogTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50);\n\nconst prompt = `professional IMAGE PROMPTS\n\nBlog Title: ${blogTitle}\nBlog Content: ${content.substring(0, 600)}\n\nCreate 3 professional professional image prompts using EXACTLY these brand colors:\n- PRIMARY: #0860D2 (deep blue — use as DOMINANT color: backgrounds, large shapes, key elements)\n- ACCENT:  #FFAF3B (warm amber/gold — highlights, CTAs, focal accents — use moderately)\n- SECONDARY: #9ACA3C (green — success/growth elements — use sparingly)\n- LIGHT: #6DCFF6 (cyan — tech/digital glows — use sparingly)\n- Text on dark: white\n\nDesign rules:\n- NO logos, NO text, NO brand names, NO watermarks\n- Clean professional modern B2B aesthetic\n- All images 16:9 horizontal\n- Heavy #0860D2 base, #FFAF3B warm highlights on focal points\n\n1. HERO: Ultra-realistic 3D abstract scene. Deep #0860D2 background. Floating geometric 3D shapes, glowing data streams, glassmorphism panels. #FFAF3B amber glow on key focal element. Depth of field, cinematic lighting. Professional and modern.\n\n2. INFO: Flat isometric 3D infographic. #0860D2 background. Clean isometric icons showing a process flow or system diagram relevant to the blog. #FFAF3B highlights on important steps/nodes. Minimalist vector style, crisp.\n\n3. PHOTO: Cinematic business lifestyle photography. Modern office or city environment. Strong #0860D2 color grade. Warm #FFAF3B light source (window or lamp). Business context — no identifiable faces, no logos.\n\nRespond with JSON only (no markdown, no code blocks):\n{\"hero\":{\"prompt\":\"...\",\"seo\":{\"filename\":\"...\",\"alt\":\"...\",\"description\":\"...\"}},\"info\":{\"prompt\":\"...\",\"seo\":{\"filename\":\"...\",\"alt\":\"...\",\"description\":\"...\"}},\"photo\":{\"prompt\":\"...\",\"seo\":{\"filename\":\"...\",\"alt\":\"...\",\"description\":\"...\"}}}`;\n\nreturn {\n  json: {\n    ...$json,\n    slug,\n    requestBody: {\n      contents: [{ parts: [{ text: prompt }] }],\n      generationConfig: { temperature: 0.85, maxOutputTokens: 2048 }\n    }\n  }\n};"
+      }
+    },
+    {
+      "name": "Generate Prompts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1360,
+        -800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
+        "options": {}
+      }
+    },
+    {
+      "name": "Parse Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1140,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Parse Gemini prompt response — use PAIRED blog row from Build Request\nconst raw     = $json.candidates[0].content.parts[0].text;\nconst clean   = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\nconst prompts = JSON.parse(clean.match(/\\{[\\s\\S]*\\}/)[0]);\n\n// Paired item from Build Request contains the original blog row\nconst blog = $('Build Request').item.json;\n\nreturn {\n  json: {\n    blogId:      blog.ID || blog.id || String(blog.row_number || '1'),\n    rowNumber:   blog.row_number || 2,\n    slug:        blog.slug || 'blog',\n    blogTitle:   blog['Blog Title'] || '',\n    prompts\n  }\n};"
+      }
+    },
+    {
+      "name": "Set Hero",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        -900,
+        -980
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "imageType",
+              "value": "hero",
+              "type": "string"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.prompts.hero.prompt }}",
+              "type": "string"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.prompts.hero.seo.filename }}",
+              "type": "string"
+            },
+            {
+              "name": "altText",
+              "value": "={{ $json.prompts.hero.seo.alt }}",
+              "type": "string"
+            },
+            {
+              "name": "description",
+              "value": "={{ $json.prompts.hero.seo.description }}",
+              "type": "string"
+            },
+            {
+              "name": "blogId",
+              "value": "={{ $json.blogId }}",
+              "type": "string"
+            },
+            {
+              "name": "rowNumber",
+              "value": "={{ $json.rowNumber }}",
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Set Info",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        -900,
+        -800
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "imageType",
+              "value": "info",
+              "type": "string"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.prompts.info.prompt }}",
+              "type": "string"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.prompts.info.seo.filename }}",
+              "type": "string"
+            },
+            {
+              "name": "altText",
+              "value": "={{ $json.prompts.info.seo.alt }}",
+              "type": "string"
+            },
+            {
+              "name": "description",
+              "value": "={{ $json.prompts.info.seo.description }}",
+              "type": "string"
+            },
+            {
+              "name": "blogId",
+              "value": "={{ $json.blogId }}",
+              "type": "string"
+            },
+            {
+              "name": "rowNumber",
+              "value": "={{ $json.rowNumber }}",
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Set Photo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        -900,
+        -620
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "imageType",
+              "value": "photo",
+              "type": "string"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $json.prompts.photo.prompt }}",
+              "type": "string"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.prompts.photo.seo.filename }}",
+              "type": "string"
+            },
+            {
+              "name": "altText",
+              "value": "={{ $json.prompts.photo.seo.alt }}",
+              "type": "string"
+            },
+            {
+              "name": "description",
+              "value": "={{ $json.prompts.photo.seo.description }}",
+              "type": "string"
+            },
+            {
+              "name": "blogId",
+              "value": "={{ $json.blogId }}",
+              "type": "string"
+            },
+            {
+              "name": "rowNumber",
+              "value": "={{ $json.rowNumber }}",
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Generate Image",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -680,
+        -800
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Connect this credential in n8n"
+        }
+      },
+      "parameters": {
+        "resource": "image",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-pro-image-preview",
+          "mode": "list"
+        },
+        "prompt": "={{ $json.prompt }}",
+        "options": {}
+      }
+    },
+    {
+      "name": "Prepare Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Attach binary image data with all metadata\nconst item = $input.item;\n\nif (!item || !item.binary) {\n  return {\n    json: {\n      imageType:   item?.json?.imageType   || 'unknown',\n      filename:    item?.json?.filename    || 'failed.png',\n      altText:     item?.json?.altText     || '',\n      description: item?.json?.description || '',\n      blogId:      item?.json?.blogId      || '1',\n      rowNumber:   item?.json?.rowNumber   || 2,\n      success: false,\n      error: 'No image binary data'\n    }\n  };\n}\n\nconst binaryKey  = Object.keys(item.binary)[0];\nconst binaryData = item.binary[binaryKey];\n\nreturn {\n  json: {\n    imageType:   item.json.imageType,\n    filename:    item.json.filename,\n    altText:     item.json.altText,\n    description: item.json.description,\n    blogId:      item.json.blogId,\n    rowNumber:   item.json.rowNumber,\n    success: true\n  },\n  binary: {\n    data: Object.assign({}, binaryData, { fileName: item.json.filename })\n  }\n};"
+      }
+    },
+    {
+      "name": "Upload to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -240,
+        -800
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Connect this credential in n8n"
+        }
+      },
+      "parameters": {
+        "name": "={{ $json.filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1195CS4yh075J38YYtMwgtoC0M_p565ld",
+          "mode": "list"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Add Drive URL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        -20,
+        -800
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "imageType",
+              "value": "={{ $('Prepare Upload').item.json.imageType }}",
+              "type": "string"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $('Prepare Upload').item.json.filename }}",
+              "type": "string"
+            },
+            {
+              "name": "altText",
+              "value": "={{ $('Prepare Upload').item.json.altText }}",
+              "type": "string"
+            },
+            {
+              "name": "description",
+              "value": "={{ $('Prepare Upload').item.json.description }}",
+              "type": "string"
+            },
+            {
+              "name": "blogId",
+              "value": "={{ $('Prepare Upload').item.json.blogId }}",
+              "type": "string"
+            },
+            {
+              "name": "rowNumber",
+              "value": "={{ $('Prepare Upload').item.json.rowNumber }}",
+              "type": "number"
+            },
+            {
+              "name": "driveId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "name": "driveUrl",
+              "value": "=https://drive.google.com/file/d/{{ $json.id }}/view",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "SEO Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Build SEO metadata prompt for Gemini\nconst d        = $json;\nconst blogRow  = $('Build Request').item.json;\nconst title    = blogRow['Blog Title'] || '';\nconst summary  = (blogRow['Summary/Content'] || '').substring(0, 500);\n\nconst typeDesc = {\n  hero:  'abstract 3D hero banner — main visual for the blog post',\n  info:  'isometric infographic / process diagram about the blog topic',\n  photo: 'business lifestyle photo related to the blog topic'\n}[d.imageType] || d.imageType;\n\nconst promptText = 'You are an SEO content specialist for a subscription product.\\n'\n  + 'Generate SEO-optimized metadata for a blog post image.\\n\\n'\n  + 'Blog Title: ' + title + '\\n'\n  + 'Blog Summary: ' + summary + '\\n'\n  + 'Image Type: ' + d.imageType + ' (' + typeDesc + ')\\n'\n  + 'Current Filename: ' + d.filename + '\\n\\n'\n  + 'Rules:\\n'\n  + '- filename: lowercase, hyphens only, 40-65 chars, descriptive keywords, ends with .jpg, NO brand names\\n'\n  + '- alt: 120-150 chars, describes EXACTLY what the image shows, keyword-rich, natural language\\n'\n  + '- description: 150-160 chars, SEO image meta description with main topic keywords\\n\\n'\n  + 'JSON only, no markdown:\\n{\"filename\":\"...\",\"alt\":\"...\",\"description\":\"...\"}';\n\nreturn {\n  json: {\n    imageType:   d.imageType,\n    filename:    d.filename,\n    altText:     d.altText,\n    description: d.description,\n    blogId:      d.blogId,\n    rowNumber:   d.rowNumber,\n    driveId:     d.driveId,\n    driveUrl:    d.driveUrl,\n    seoRequest: {\n      contents: [{ parts: [{ text: promptText }] }],\n      generationConfig: { temperature: 0.3, maxOutputTokens: 512 }\n    }\n  }\n};"
+      }
+    },
+    {
+      "name": "SEO Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        -800
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.seoRequest }}",
+        "options": {}
+      }
+    },
+    {
+      "name": "Parse SEO",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Parse SEO Agent response, merge with image metadata\nconst geminiResp = $json;\nconst prev       = $('SEO Request').item.json;\n\nlet filename    = prev.filename    || 'image.jpg';\nlet altText     = prev.altText     || '';\nlet description = prev.description || '';\n\ntry {\n  const raw   = geminiResp.candidates[0].content.parts[0].text;\n  const clean = raw.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  const seo   = JSON.parse(clean.match(/\\{[\\s\\S]*\\}/)[0]);\n  if (seo.filename)    filename    = seo.filename;\n  if (seo.alt)         altText     = seo.alt;\n  if (seo.description) description = seo.description;\n} catch(e) {\n  console.log('SEO parse fallback — using original metadata. Error:', e.message);\n}\n\n// Ensure .jpg extension\nif (!filename.endsWith('.jpg') && !filename.endsWith('.png')) {\n  filename = filename.replace(/\\.[^.]+$/, '') + '.jpg';\n}\n\nconsole.log('SEO [' + prev.imageType + ']: ' + filename);\n\nreturn {\n  json: {\n    imageType:   prev.imageType,\n    filename,\n    altText,\n    description,\n    blogId:      prev.blogId,\n    rowNumber:   prev.rowNumber,\n    driveId:     prev.driveId,\n    driveUrl:    prev.driveUrl\n  }\n};"
+      }
+    },
+    {
+      "name": "Rename Drive File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        860,
+        -800
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Connect this credential in n8n"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.driveId }}",
+          "mode": "id"
+        },
+        "name": "={{ $json.filename }}",
+        "updateFields": {}
+      }
+    },
+    {
+      "name": "After Rename",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Restore full SEO metadata after Drive file rename\nconst seo = $('Parse SEO').item.json;\n\nconsole.log('Final [' + seo.imageType + ']: ' + seo.filename + ' | row:' + seo.rowNumber);\n\nreturn { json: seo };"
+      }
+    },
+    {
+      "name": "Merge All Images",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        -800
+      ],
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      }
+    },
+    {
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        -800
+      ],
+      "parameters": {
+        "jsCode": "// Group image results by blog (rowNumber) — one output per blog\nconst items = $input.all();\n\nconsole.log('FORMAT DATA — received', items.length, 'items');\n\nconst byBlog = {};\n\nitems.forEach(item => {\n  const d      = item.json || {};\n  const rowNum = d.rowNumber || 2;\n\n  if (!byBlog[rowNum]) {\n    byBlog[rowNum] = {\n      row_number:       rowNum,\n      Status:           'partial',\n      'Hero Image':     '', 'Hero Alt':        '', 'Hero Description':  '', 'Hero URL':  '',\n      'Info Image':     '', 'Info Alt':        '', 'Info Description':  '', 'Info URL':  '',\n      'Photo Image':    '', 'Photo Alt':       '', 'Photo Description': '', 'Photo URL': '',\n      'Generated Images': ''\n    };\n  }\n\n  const r = byBlog[rowNum];\n  if (d.imageType === 'hero') {\n    r['Hero Image'] = d.filename || ''; r['Hero Alt'] = d.altText || '';\n    r['Hero Description'] = d.description || ''; r['Hero URL'] = d.driveUrl || '';\n  } else if (d.imageType === 'info') {\n    r['Info Image'] = d.filename || ''; r['Info Alt'] = d.altText || '';\n    r['Info Description'] = d.description || ''; r['Info URL'] = d.driveUrl || '';\n  } else if (d.imageType === 'photo') {\n    r['Photo Image'] = d.filename || ''; r['Photo Alt'] = d.altText || '';\n    r['Photo Description'] = d.description || ''; r['Photo URL'] = d.driveUrl || '';\n  }\n});\n\nreturn Object.values(byBlog).map(r => {\n  const count = [r['Hero Image'], r['Info Image'], r['Photo Image']].filter(Boolean).length;\n  r.Status           = count === 3 ? 'completed' : count > 0 ? 'partial' : 'error';\n  r['Generated Images'] = [r['Hero URL'], r['Info URL'], r['Photo URL']].filter(Boolean).join(', ');\n  console.log('Row', r.row_number, ':', r.Status, '(' + count + ' images)');\n  return { json: r };\n});"
+      }
+    },
+    {
+      "name": "Update Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        1740,
+        -800
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Connect this credential in n8n"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1wf_GRq6E7WePSj6eTxdhbnfHqCAzy1_HRAlUV12ab9k",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "={{ $json.Status }}",
+            "Hero Image": "={{ $json['Hero Image'] }}",
+            "Hero Alt": "={{ $json['Hero Alt'] }}",
+            "Hero Description": "={{ $json['Hero Description'] }}",
+            "Hero URL": "={{ $json['Hero URL'] }}",
+            "Info Image": "={{ $json['Info Image'] }}",
+            "Info Alt": "={{ $json['Info Alt'] }}",
+            "Info Description": "={{ $json['Info Description'] }}",
+            "Info URL": "={{ $json['Info URL'] }}",
+            "Photo Image": "={{ $json['Photo Image'] }}",
+            "Photo Alt": "={{ $json['Photo Alt'] }}",
+            "Photo Description": "={{ $json['Photo Description'] }}",
+            "Photo URL": "={{ $json['Photo URL'] }}",
+            "Generated Images": "={{ $json['Generated Images'] }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "n01-trigger-0000-0000-000000000001": {
+      "main": [
+        [
+          {
+            "node": "n02-readsh-0000-0000-000000000002",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n02-readsh-0000-0000-000000000002": {
+      "main": [
+        [
+          {
+            "node": "n03-filter-0000-0000-000000000003",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n03-filter-0000-0000-000000000003": {
+      "main": [
+        [
+          {
+            "node": "n04-buildq-0000-0000-000000000004",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n04-buildq-0000-0000-000000000004": {
+      "main": [
+        [
+          {
+            "node": "n05-genpro-0000-0000-000000000005",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n05-genpro-0000-0000-000000000005": {
+      "main": [
+        [
+          {
+            "node": "n06-parsep-0000-0000-000000000006",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n06-parsep-0000-0000-000000000006": {
+      "main": [
+        [
+          {
+            "node": "n07-sthero-0000-0000-000000000007",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "n08-stinfo-0000-0000-000000000008",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "n09-stphot-0000-0000-000000000009",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n07-sthero-0000-0000-000000000007": {
+      "main": [
+        [
+          {
+            "node": "n10-genimg-0000-0000-000000000010",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n08-stinfo-0000-0000-000000000008": {
+      "main": [
+        [
+          {
+            "node": "n10-genimg-0000-0000-000000000010",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n09-stphot-0000-0000-000000000009": {
+      "main": [
+        [
+          {
+            "node": "n10-genimg-0000-0000-000000000010",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n10-genimg-0000-0000-000000000010": {
+      "main": [
+        [
+          {
+            "node": "n11-prepup-0000-0000-000000000011",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n11-prepup-0000-0000-000000000011": {
+      "main": [
+        [
+          {
+            "node": "n12-updrvv-0000-0000-000000000012",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n12-updrvv-0000-0000-000000000012": {
+      "main": [
+        [
+          {
+            "node": "n13-addurl-0000-0000-000000000013",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n13-addurl-0000-0000-000000000013": {
+      "main": [
+        [
+          {
+            "node": "n14-seoreq-0000-0000-000000000014",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n14-seoreq-0000-0000-000000000014": {
+      "main": [
+        [
+          {
+            "node": "n15-seoagt-0000-0000-000000000015",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n15-seoagt-0000-0000-000000000015": {
+      "main": [
+        [
+          {
+            "node": "n16-prsseo-0000-0000-000000000016",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n16-prsseo-0000-0000-000000000016": {
+      "main": [
+        [
+          {
+            "node": "n17-rename-0000-0000-000000000017",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n17-rename-0000-0000-000000000017": {
+      "main": [
+        [
+          {
+            "node": "n18-aftern-0000-0000-000000000018",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n18-aftern-0000-0000-000000000018": {
+      "main": [
+        [
+          {
+            "node": "n19-mergen-0000-0000-000000000019",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n19-mergen-0000-0000-000000000019": {
+      "main": [
+        [
+          {
+            "node": "n20-fmtdat-0000-0000-000000000020",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "n20-fmtdat-0000-0000-000000000020": {
+      "main": [
+        [
+          {
+            "node": "n21-updsh2-0000-0000-000000000021",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "executionTimeout": 3600
+  },
+  "staticData": null
+}
