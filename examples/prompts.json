@@ -1,0 +1,17 @@
+[
+  {
+    "prompt": "editorial hero image about open science and reproducibility, photographic, soft daylight, 16:9",
+    "filename": "open-science-hero.jpg",
+    "type": "hero"
+  },
+  {
+    "prompt": "clean infographic visualising a 5-step data pipeline, flat vector style, two muted accent colors",
+    "filename": "data-pipeline-info.jpg",
+    "type": "info"
+  },
+  {
+    "prompt": "lifestyle photo of someone reviewing a printed analytics report at a wooden desk, natural light",
+    "filename": "analytics-photo.jpg",
+    "type": "photo"
+  }
+]

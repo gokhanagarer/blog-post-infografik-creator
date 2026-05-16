@@ -1,0 +1,12 @@
+{
+  "name": "Acme",
+  "colors": {
+    "primary_blue":       [0, 96, 217],
+    "growth_green":       [154, 202, 60],
+    "tech_cyan":          [109, 207, 246],
+    "background_grey":    [246, 246, 246],
+    "highlight_orange":   [255, 175, 0],
+    "pure_white":         [255, 255, 255]
+  },
+  "logo": "logo.png"
+}

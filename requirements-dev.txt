@@ -1,0 +1,6 @@
+-r requirements.txt
+pytest==8.3.3
+google-genai==0.3.0
+# Optional: enables SVG logos in postprocess.add_logo. Requires native libcairo
+# (`brew install cairo` on macOS). If absent, the pipeline falls back to a sibling PNG.
+cairosvg==2.7.1
